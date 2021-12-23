@@ -1,10 +1,7 @@
 import Foundation
-import Combine
 import PlaygroundSupport
 
 PlaygroundPage.current.needsIndefiniteExecution = true
-
-var cancellables: Set<AnyCancellable> = .init()
 
 enum Season: String, CaseIterable {
     case spring = "S1"
@@ -18,9 +15,8 @@ let startYear: Int = startROCYear + 1911
 let dateComponent = Calendar.current.dateComponents(in: .current, from: .init())
 let endYear = dateComponent.year!
 
-let workQueue: DispatchQueue = .global()
-
-Array(startYear...endYear)
+let start: DispatchTime = .now()
+let requests: [URLRequest] = Array(startYear...endYear)
     .flatMap { year -> [String] in
         let rocYear = year - 1911
         return Season.allCases
@@ -40,21 +36,28 @@ Array(startYear...endYear)
         ]
         return components
     }
-    .publisher
-    .compactMap { components -> URL? in
-        components.url
+    .compactMap { component -> URL? in
+        component.url
     }
-    .flatMap { url -> URLSession.DataTaskPublisher in
+    .map { url -> URLRequest in
         var request: URLRequest = .init(url: url)
         request.timeoutInterval = 300
-        return URLSession.shared.dataTaskPublisher(for: request)
+        return request
     }
-    .receive(on: workQueue)
-    .sink(receiveCompletion: { completion in
-        print(completion)
-    }, receiveValue: { output in
-        print("\(output.response.url?.absoluteString ?? "") - \(output.data.count)")
-    })
-    .store(in: &cancellables)
 
-// 調整每次下載一部份就好
+let group: DispatchGroup = .init()
+requests.forEach { request in
+    group.enter()
+    URLSession.shared.dataTask(with: request) { data, resp, error in
+        DispatchQueue.global().async {
+            print("\(resp?.url?.absoluteString ?? "") - \(data?.count ?? 0)")
+            group.leave()
+        }        
+    }.resume()
+}
+group.notify(queue: .global(), execute: {
+    let end: DispatchTime = .now()
+    let interval: Double = .init(end.uptimeNanoseconds - start.uptimeNanoseconds) / 1_000_000_000
+    print("下載時間: \(interval) seconds")
+})
+
