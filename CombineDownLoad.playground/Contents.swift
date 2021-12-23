@@ -18,6 +18,8 @@ let startYear: Int = startROCYear + 1911
 let dateComponent = Calendar.current.dateComponents(in: .current, from: .init())
 let endYear = dateComponent.year!
 
+let workQueue: DispatchQueue = .global()
+
 Array(startYear...endYear)
     .flatMap { year -> [String] in
         let rocYear = year - 1911
@@ -43,13 +45,15 @@ Array(startYear...endYear)
         components.url
     }
     .flatMap { url -> URLSession.DataTaskPublisher in
-        URLSession.shared.dataTaskPublisher(for: url)
+        var request: URLRequest = .init(url: url)
+        request.timeoutInterval = 300
+        return URLSession.shared.dataTaskPublisher(for: request)
     }
-    .receive(on: DispatchQueue.global())
+    .receive(on: workQueue)
     .sink(receiveCompletion: { completion in
         print(completion)
     }, receiveValue: { output in
-        print(output.data.count)
+        print("\(output.response.url?.absoluteString ?? "") - \(output.data.count)")
     })
     .store(in: &cancellables)
 
